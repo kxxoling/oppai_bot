@@ -12,3 +12,4 @@ aiotg = "*"
 
 yapf = "*"
 ipython = "*"
+pytest = "*"

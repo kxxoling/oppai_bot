@@ -1,8 +1,7 @@
 # Media files
 media
 static/CACHE
-
-charcoal/settings/prod.py
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
