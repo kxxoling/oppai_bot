@@ -1,62 +1,57 @@
 import logging
 import os
 
-import telegram
-from telegram.ext import Updater
-from telegram.ext import CommandHandler
+from aiotg import Bot, Chat
+import aiohttp
 
-import requests
 from lxml import html
-
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG)
+    level=logging.DEBUG
+)
 
 TOKEN = os.environ.get('OPPAI_BOT_TOKEN')
+bot = Bot(api_token=TOKEN)
+bot.session._trust_env = True    # Using HTTP_PROXY
 
 
-def get_media():
+async def get_media():
     API = 'https://twitter.com/i/profiles/show/Strangestone/media_timeline'
-    rsp = requests.get(API)
-    nodes = html.fromstring(rsp.json()['items_html'])
-    imgs = nodes.xpath('//div[@class="AdaptiveMedia-container"]//img/@src')
-    return imgs
+    async with aiohttp.ClientSession(trust_env=True) as session:
+        async with session.get(API) as rsp:
+            content_json = await rsp.json()
+    nodes = html.fromstring(content_json['items_html'])
+    tweet_nodes = nodes.xpath(
+        '//li/div[contains(@class, "tweet")]/div[contains(@class, "content")]'
+    )
+    tweets = map(lambda node: { 'photo': node.xpath('div//div[contains(@class, "js-adaptive-photo")]/img/@src')[0],
+                                'caption': node.xpath('div//p[contains(@class, "tweet-text")]/text()')[0] },
+                 tweet_nodes)
+    oppai_tweets = list(filter(lambda x: '月曜日のたわわ' in x['caption'], tweets))
+    return oppai_tweets
 
 
-updater = Updater(token=TOKEN)
-bot = telegram.Bot(token=TOKEN)
-
-dispatcher = updater.dispatcher
-
-
-def start(bot, update):
-    bot.send_message(chat_id=update.message.chat_id, text="Try some commands!")
+@bot.command('/start')
+async def start(chat: Chat, match):
+    chat.reply('''
+Try some commands!
+''')
 
 
-start_handler = CommandHandler('start', start)
-updater.dispatcher.add_handler(start_handler)
+@bot.command('/oppai')
+async def oppai(chat: Chat, match):
+    media = await get_media()
+    await chat.send_photo(photo=media[0]['photo'], caption=media[0]['caption'])
 
 
-def oppai(bot, update):
-    media = get_media()
-    bot.send_photo(chat_id=update.message.chat_id, photo=media[0])
+@bot.command('/more_oppai')
+async def more_oppai(chat: Chat, match):
+    media = await get_media()
+    chat.reply('Here comes %d oppais!' % len(media))
+    for i in media:
+        await chat.send_photo(photo=i['photo'], caption=i['caption'])
 
 
-def more_oppai(bot, update):
-    media = get_media()
-    bot.send_message(
-        chat_id=update.message.chat_id,
-        text="Here comes %d oppais!" % len(media))
-    for photo in media:
-        bot.send_photo(chat_id=update.message.chat_id, photo=photo)
-
-
-oppai_handler = CommandHandler('oppai', oppai)
-updater.dispatcher.add_handler(oppai_handler)
-more_oppai_handler = CommandHandler('more_oppai', more_oppai)
-updater.dispatcher.add_handler(more_oppai_handler)
-
-
-updater.start_polling()
-updater.idle()
+if __name__ == '__main__':
+    bot.run(debug=True)
